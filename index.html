@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⛓️ Blockchain Explorer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">⛓️ Blockchain Explorer</div>
+            <div class="stats-bar">
+                <div class="stat-item">
+                    <span class="stat-value" id="totalBlocks">1</span>
+                    <span class="stat-label">Blocks</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="currentDiff">4</span>
+                    <span class="stat-label">Difficulty</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="pendingCount">0</span>
+                    <span class="stat-label">Pending</span>
+                </div>
+                <div class="stat-item">
+                    <span id="chainStatus" class="status valid">✓ Valid</span>
+                    <span class="stat-label">Status</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main">
+            <!-- Left Panel -->
+            <aside class="sidebar">
+                <!-- Transaction Form -->
+                <section class="card">
+                    <h3>💸 New Transaction</h3>
+                    <div class="form">
+                        <label>From</label>
+                        <select id="sender"></select>
+
+                        <label>To</label>
+                        <select id="receiver"></select>
+
+                        <label>Amount</label>
+                        <input type="number" id="amount" value="50" min="1">
+
+                        <button class="btn primary" onclick="addTransaction()">
+                            Add Transaction
+                        </button>
+                    </div>
+                </section>
+
+                <!-- Pending -->
+                <section class="card">
+                    <h3>📋 Pending Transactions</h3>
+                    <div id="pendingList" class="list">
+                        <p class="empty">No pending transactions</p>
+                    </div>
+                </section>
+
+                <!-- Mining -->
+                <section class="card">
+                    <h3>⛏️ Mining</h3>
+                    <div class="form">
+                        <label>Competing Miners</label>
+                        <input type="number" id="numMiners" value="3" min="2" max="6">
+                        <small>Random participants from the network will compete</small>
+
+                        <button class="btn success" id="mineBtn" onclick="startMining()">
+                            <span class="icon">⛏️</span> Start Mining Race
+                        </button>
+                    </div>
+
+                    <div id="miningPanel" class="mining-panel hidden">
+                        <div class="mining-header">
+                            <span id="miningStatus">Preparing...</span>
+                            <span id="miningTime">⏱️ 0s</span>
+                        </div>
+                        <div id="minerStats" class="miner-grid"></div>
+                    </div>
+                </section>
+
+                <!-- Settings -->
+                <section class="card">
+                    <h3>⚙️ Settings</h3>
+                    <div class="form">
+                        <label>POW Difficulty</label>
+                        <input type="number" id="difficultyInput" value="4" min="1" max="6"
+                            onchange="updateDifficulty()">
+                        <small>Number of leading zeros required</small>
+                    </div>
+
+                    <div class="btn-row">
+                        <button class="btn info" onclick="validateChain()">✓ Validate</button>
+                        <button class="btn secondary" onclick="resetBlockchain()">↺ Reset</button>
+                    </div>
+                </section>
+
+                <!-- Balances -->
+                <section class="card">
+                    <h3>💰 Balances</h3>
+                    <div id="balances" class="list"></div>
+                </section>
+            </aside>
+
+            <!-- Main Content -->
+            <section class="content">
+                <h2>⛓️ Blockchain</h2>
+                <div id="blockchainView" class="chain-grid"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Block Modal -->
+    <div id="blockModal" class="modal hidden">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h2>📦 Block Details</h2>
+                <button class="close-btn" onclick="closeModal()">✕</button>
+            </div>
+            <div id="blockDetails" class="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="blockchain.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>

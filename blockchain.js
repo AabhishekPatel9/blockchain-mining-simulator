@@ -192,48 +192,87 @@ class Blockchain {
 
     validateChain() {
         const errors = [];
+        const balances = {};
 
-        for (let i = 1; i < this.chain.length; i++) {
+        // Initialize genesis balances (50 BTC per person)
+        NETWORK_POOL.forEach(p => {
+            balances[p.name] = 50;
+        });
+
+        // Loop through all blocks to validate chain integrity AND balances
+        for (let i = 0; i < this.chain.length; i++) {
             const current = this.chain[i];
             const previous = this.chain[i - 1];
 
-            // 1. Recalculate hash and compare to stored hash
-            const recalculatedHash = current.calculateHash();
-            if (current.hash !== recalculatedHash) {
-                errors.push({
-                    block: i,
-                    type: 'HASH_MISMATCH',
-                    message: 'Block data was tampered (hash mismatch)'
-                });
+            // --- 1. Cryptographic Validation ---
+
+            // Skip genesis for hash link check
+            if (i > 0) {
+                // Check hash link
+                if (current.previousHash !== previous.hash) {
+                    errors.push({
+                        block: i,
+                        type: 'BROKEN_CHAIN',
+                        message: 'Previous hash link broken'
+                    });
+                }
+
+                // Check hash recalculation
+                const recalculatedHash = current.calculateHash();
+                if (current.hash !== recalculatedHash) {
+                    errors.push({
+                        block: i,
+                        type: 'HASH_MISMATCH',
+                        message: 'Block data was tampered'
+                    });
+                }
+
+                // Check Merkle root
+                const correctMerkle = MerkleTree.getRoot(current.transactions);
+                if (current.merkleRoot !== correctMerkle) {
+                    errors.push({
+                        block: i,
+                        type: 'INVALID_MERKLE',
+                        message: 'Merkle root mismatch'
+                    });
+                }
+
+                // Check PoW
+                const target = '0'.repeat(current.difficulty || this.difficulty);
+                if (!current.hash.startsWith(target)) {
+                    errors.push({
+                        block: i,
+                        type: 'INVALID_POW',
+                        message: 'Invalid Proof-of-Work'
+                    });
+                }
             }
 
-            // 2. Check previous hash link
-            if (current.previousHash !== previous.hash) {
-                errors.push({
-                    block: i,
-                    type: 'BROKEN_CHAIN',
-                    message: 'Previous hash link broken'
-                });
-            }
+            // --- 2. State/Balance Validation ---
 
-            // 3. Check Merkle root
-            const correctMerkle = MerkleTree.getRoot(current.transactions);
-            if (current.merkleRoot !== correctMerkle) {
-                errors.push({
-                    block: i,
-                    type: 'INVALID_MERKLE',
-                    message: 'Merkle root mismatch (transactions tampered)'
-                });
-            }
+            // Process transactions to update state
+            for (const tx of current.transactions) {
+                if (tx.sender === 'Network') {
+                    // Mining reward - add to miner
+                    if (!balances[tx.receiver]) balances[tx.receiver] = 0;
+                    balances[tx.receiver] += tx.amount;
+                } else {
+                    // Regular transaction
+                    if (!balances[tx.sender]) balances[tx.sender] = 0;
+                    if (!balances[tx.receiver]) balances[tx.receiver] = 0;
 
-            // 4. Check POW (use block's own difficulty)
-            const target = '0'.repeat(current.difficulty || 1);
-            if (!current.hash.startsWith(target)) {
-                errors.push({
-                    block: i,
-                    type: 'INVALID_POW',
-                    message: `Hash doesn't meet difficulty ${current.difficulty}`
-                });
+                    // Check if sender has enough funds validly
+                    if (balances[tx.sender] < tx.amount) {
+                        errors.push({
+                            block: i,
+                            type: 'INSUFFICIENT_FUNDS',
+                            message: `Invalid Tx: ${tx.sender} has ${balances[tx.sender]}, tried to send ${tx.amount}`
+                        });
+                    }
+
+                    balances[tx.sender] -= tx.amount;
+                    balances[tx.receiver] += tx.amount;
+                }
             }
         }
 

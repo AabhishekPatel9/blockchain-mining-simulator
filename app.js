@@ -7,8 +7,30 @@ let blockchain;
 let isMining = false;
 let activeWorkers = [];
 
+// ============== THEME TOGGLE ==============
+
+function initTheme() {
+    const saved = localStorage.getItem('bc-theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', saved);
+    updateThemeIcon(saved);
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('bc-theme', next);
+    updateThemeIcon(next);
+}
+
+function updateThemeIcon(theme) {
+    const btn = document.getElementById('themeToggle');
+    if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+}
+
 // Initialize
 window.addEventListener('DOMContentLoaded', () => {
+    initTheme();
     blockchain = new Blockchain(4, 50);  // Difficulty 4, 50 BTC reward
     populateDropdowns();
     updateUI();
@@ -314,10 +336,14 @@ function validateChain() {
 
 function updateDifficulty() {
     const val = parseInt(document.getElementById('difficultyInput').value);
-    if (val >= 1 && val <= 6) {
+    if (val >= 1 && val <= 8) {
         blockchain.difficulty = val;
         document.getElementById('currentDiff').textContent = val;
-        showToast(`Difficulty: ${val} (${val} leading zeros)`, 'info');
+        if (val >= 7) {
+            showToast(`⚠️ Difficulty ${val} — mining may take several minutes!`, 'warning');
+        } else {
+            showToast(`Difficulty: ${val} (${val} leading zeros)`, 'info');
+        }
     }
 }
 
@@ -396,7 +422,7 @@ function showBlockDetails(index) {
                     <span class="tx-amount" id="txAmt-${index}-${txIdx}">${tx.amount}</span>
                     ${isReward ? '<span class="reward-badge">⛏️ Mining Reward</span>' : ''}
                 </div>
-                ${canTamper && !isReward ? `
+                ${canTamper ? `
                     <button class="btn-tamper" onclick="tamperTx(${index}, ${txIdx})">🔧 Tamper</button>
                 ` : ''}
             </div>
@@ -404,6 +430,25 @@ function showBlockDetails(index) {
     });
 
     html += '</div>';
+
+    // Show re-mine button if block is invalid
+    const validation = blockchain.validateChain();
+    const invalidBlocks = new Set(validation.errors.map(e => e.block));
+    const firstInvalid = invalidBlocks.size > 0 ? Math.min(...invalidBlocks) : -1;
+    const isBlockInvalid = index >= firstInvalid && firstInvalid !== -1;
+
+    if (isBlockInvalid && index > 0) {
+        html += `
+            <div class="remine-section">
+                <button class="btn success remine-btn" id="remineBtn" onclick="remineBlock(${index})">
+                    <span class="icon">⛏️</span> Re-mine This Block
+                </button>
+                <small class="remine-hint">Uses this block's original difficulty (${block.difficulty || blockchain.difficulty} leading zeros). No new reward is added.</small>
+                <div id="remineProgress" class="remine-progress hidden"></div>
+            </div>
+        `;
+    }
+
     content.innerHTML = html;
     modal.classList.remove('hidden');
 }
@@ -456,6 +501,113 @@ function tamperDate(blockIdx) {
     updateUI();
     showBlockDetails(blockIdx); // Refresh modal
 }
+
+// ============== RE-MINING ==============
+
+let isRemining = false;
+
+function remineBlock(blockIndex) {
+    if (isRemining) {
+        showToast('Re-mining already in progress', 'warning');
+        return;
+    }
+
+    const block = blockchain.chain[blockIndex];
+    if (!block || blockIndex < 1) return;
+
+    isRemining = true;
+
+    // Disable the re-mine button
+    const btn = document.getElementById('remineBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="icon">⏳</span> Re-mining...';
+    }
+
+    // Recalculate Merkle root in case transactions were tampered
+    block.merkleRoot = MerkleTree.getRoot(block.transactions);
+
+    // Update previousHash to match the actual previous block's hash
+    if (blockIndex > 0) {
+        block.previousHash = blockchain.chain[blockIndex - 1].hash;
+    }
+
+    const difficulty = block.difficulty || blockchain.difficulty;
+    const blockData = {
+        index: block.index,
+        timestamp: block.timestamp,
+        merkleRoot: block.merkleRoot,
+        previousHash: block.previousHash
+    };
+
+    // Show progress panel
+    const progressEl = document.getElementById('remineProgress');
+    if (progressEl) {
+        progressEl.classList.remove('hidden');
+        progressEl.innerHTML = '<span>⏳ Searching for valid nonce...</span><span id="remineAttempts">0 hashes</span>';
+    }
+
+    const startTime = Date.now();
+    const worker = createMinerWorker();
+
+    worker.onmessage = (e) => {
+        const { type, nonce, hash, attempts } = e.data;
+
+        if (type === 'SUCCESS') {
+            worker.terminate();
+            isRemining = false;
+
+            // Update the block
+            block.nonce = nonce;
+            block.hash = hash;
+
+            // Update next block's previousHash if it exists
+            const nextBlock = blockchain.chain[blockIndex + 1];
+            if (nextBlock) {
+                nextBlock.previousHash = hash;
+            }
+
+            const timeTaken = ((Date.now() - startTime) / 1000).toFixed(2);
+            updateUI();
+
+            // Check if more blocks need re-mining
+            // Check validation for the CURRENT block
+            const validation = blockchain.validateChain();
+            const currentBlockError = validation.errors.find(e => e.block === blockIndex);
+
+            if (currentBlockError) {
+                showToast(`❌ Block #${blockIndex} re-mined but INVALID!\n${currentBlockError.message}`, 'error');
+                showBlockDetails(blockIndex); // Refresh to show error
+            } else {
+                // Check if subsequent blocks are invalid (cascading hash issues)
+                const nextInvalidBlock = validation.errors.find(e => e.block > blockIndex);
+
+                if (nextInvalidBlock) {
+                    showToast(`✅ Block #${blockIndex} re-mined in ${timeTaken}s!\nBlock #${nextInvalidBlock.block} needs re-mining.`, 'warning');
+                    showBlockDetails(nextInvalidBlock.block); // Open next invalid block
+                } else {
+                    showToast(`✅ Block #${blockIndex} re-mined in ${timeTaken}s!\nChain is now valid!`, 'success');
+                    // Refresh current modal to show green status
+                    showBlockDetails(blockIndex);
+                }
+            }
+
+        } else if (type === 'PROGRESS') {
+            const attemptsEl = document.getElementById('remineAttempts');
+            if (attemptsEl) {
+                attemptsEl.textContent = `${attempts.toLocaleString()} hashes`;
+            }
+        }
+    };
+
+    worker.postMessage({
+        blockData: blockData,
+        difficulty: difficulty,
+        minerName: block.minedBy || 'Re-miner',
+        startNonce: 0
+    });
+}
+
 // ============== UI UPDATES ==============
 
 function updateUI() {

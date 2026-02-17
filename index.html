@@ -13,6 +13,8 @@
         <!-- Header -->
         <header class="header">
             <div class="logo">⛓️ Blockchain Explorer</div>
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()"
+                title="Toggle Light/Dark Theme">🌙</button>
             <div class="stats-bar">
                 <div class="stat-item">
                     <span class="stat-value" id="totalBlocks">1</span>
@@ -90,7 +92,7 @@
                     <h3>⚙️ Settings</h3>
                     <div class="form">
                         <label>POW Difficulty</label>
-                        <input type="number" id="difficultyInput" value="4" min="1" max="6"
+                        <input type="number" id="difficultyInput" value="4" min="1" max="8"
                             onchange="updateDifficulty()">
                         <small>Number of leading zeros required</small>
                     </div>
